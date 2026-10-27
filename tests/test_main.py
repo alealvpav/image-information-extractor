@@ -27,7 +27,7 @@ def media_dir(tmp_path):
 
 
 def test_get_media_files_skips_hidden_subfolders_and_srt(tmp_path):
-    for name in ('b.jpg', 'a.mp4', 'a.SRT', '.oculto.jpg'):
+    for name in ('b.jpg', 'a.mp4', 'a.SRT', '.oculto.jpg', 'resultados.CSV'):
         (tmp_path / name).write_bytes(b'')
     (tmp_path / 'subcarpeta').mkdir()
     assert get_media_files(str(tmp_path)) == ['a.mp4', 'b.jpg']
@@ -57,10 +57,13 @@ def test_new_csv(monkeypatch, media_dir, tmp_path, capsys):
     answer(monkeypatch, str(media_dir), 'n', str(csv_path))
     main.main([])
 
-    _, rows = csv_store.read_csv(csv_path)
+    fieldnames, rows = csv_store.read_csv(csv_path)
+    assert fieldnames == csv_store.CSV_COLUMNS
     by_name = {r[csv_store.FILE_NAME_COLUMN]: r for r in rows}
     assert set(by_name) == {'foto.jpg', 'IMG_0001.MOV', 'roto.mov'}
-    assert by_name['IMG_0001.MOV']['Model'] == 'iPhone 15 Pro'
+    assert by_name['IMG_0001.MOV']['DateTimeOriginal'] == '2024:10:30 12:00:00'
+    assert by_name['IMG_0001.MOV']['Latitude'] == '40.4168'
+    assert by_name['foto.jpg']['GPSSource'] == 'EXIF'
     assert by_name['foto.jpg'][csv_store.FILE_TYPE_COLUMN] == 'image'
     assert by_name['roto.mov']['Latitude'] == ''
     assert 'No se ha podido leer roto.mov' in capsys.readouterr().out
@@ -158,3 +161,85 @@ def test_args_only_folder_asks_the_rest(monkeypatch, media_dir, tmp_path):
     main.main([str(media_dir)])
     assert not any('carpeta' in prompt for prompt in asked)
     assert (tmp_path / 'viaje.csv').exists()
+
+
+# ---------------------------------------------------------------------------
+# Ruta por defecto del CSV
+# ---------------------------------------------------------------------------
+
+def test_default_csv_is_saved_in_media_folder(monkeypatch, media_dir, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    prompts = []
+    answers = iter([str(media_dir), 'n', ''])  # Enter = ruta por defecto
+    monkeypatch.setattr('builtins.input', lambda prompt='': prompts.append(prompt) or next(answers))
+    main.main([])
+
+    default_csv = media_dir / main.DEFAULT_OUTPUT_FILE
+    assert f'[{default_csv}]' in prompts[2]
+    assert default_csv.exists()
+    assert not (tmp_path / main.DEFAULT_OUTPUT_FILE).exists()
+
+
+def test_default_csv_in_media_folder_is_not_analyzed_on_update(monkeypatch, media_dir, capsys):
+    answer(monkeypatch, str(media_dir), 'n', '')
+    main.main([])
+    capsys.readouterr()
+
+    answer(monkeypatch, str(media_dir), 'a', '')  # actualizar el CSV por defecto
+    main.main([])
+    out = capsys.readouterr().out
+    assert '0 archivos nuevos, 3 actualizados, 3 en total' in out
+    assert main.DEFAULT_OUTPUT_FILE not in out.split('Guardado en')[0]  # el CSV no se lee como si fuera una foto
+
+
+@pytest.mark.parametrize('typed, expected', [
+    ('viaje', 'viaje.csv'),                               # solo el nombre, sin extensión
+    ('viaje.csv', 'viaje.csv'),
+    ('resultados/viaje.csv', 'resultados/viaje.csv'),     # ruta relativa
+])
+def test_relative_csv_path_is_relative_to_media_folder(monkeypatch, media_dir, tmp_path, typed, expected):
+    (media_dir / 'resultados').mkdir()
+    monkeypatch.chdir(tmp_path)
+    answer(monkeypatch, str(media_dir), 'n', typed)
+    main.main([])
+    assert (media_dir / expected).exists()
+    assert not (tmp_path / expected).exists()
+
+
+def test_absolute_csv_path_is_kept(monkeypatch, media_dir, tmp_path):
+    answer(monkeypatch, str(media_dir), 'n', str(tmp_path / 'fuera.csv'))
+    main.main([])
+    assert (tmp_path / 'fuera.csv').exists()
+
+
+def test_relative_csv_to_update_is_looked_up_in_media_folder(monkeypatch, media_dir, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    csv_store.write_csv(media_dir / 'viaje.csv', [csv_store.build_row('otra.jpg', '/otra/otra.jpg', 'image', {})])
+    answer(monkeypatch, str(media_dir), 'a', 'viaje.csv')
+    main.main([])
+    assert '3 archivos nuevos, 0 actualizados, 4 en total' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('option, expected_rows', [('--nuevo', 3), ('--actualizar', 4)])
+def test_relative_csv_arguments_are_relative_to_media_folder(monkeypatch, media_dir, tmp_path, option, expected_rows):
+    no_questions(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    if option == '--actualizar':
+        csv_store.write_csv(media_dir / 'viaje.csv', [csv_store.build_row('a.jpg', '/a/a.jpg', 'image', {})])
+    main.main([str(media_dir), option, 'viaje.csv'])
+    assert len(csv_store.read_csv(media_dir / 'viaje.csv')[1]) == expected_rows
+    assert not (tmp_path / 'viaje.csv').exists()
+
+
+def test_normalize_path_with_base_dir(monkeypatch):
+    monkeypatch.setenv('HOME', '/home/yo')
+    assert main.normalize_path('viaje.csv', '/fotos') == '/fotos/viaje.csv'
+    assert main.normalize_path('../viaje.csv', '/fotos/2024') == '/fotos/viaje.csv'
+    assert main.normalize_path('/tmp/viaje.csv', '/fotos') == '/tmp/viaje.csv'
+    assert main.normalize_path('~/viaje.csv', '/fotos') == '/home/yo/viaje.csv'
+
+
+def test_normalize_path_with_base_dir_windows(monkeypatch):
+    monkeypatch.setattr(main, 'os', types.SimpleNamespace(path=ntpath))
+    assert main.normalize_path('viaje.csv', r'D:\Fotos') == r'D:\Fotos\viaje.csv'
+    assert main.normalize_path(r'"C:\Informes\viaje.csv"', r'D:\Fotos') == r'C:\Informes\viaje.csv'

@@ -257,6 +257,24 @@ def get_sidecar_srt(fname: str):
     return None
 
 
+def parse_iso8601(value: str):
+    """'2024-10-30T12:00:00+0100' (iPhone) -> mismo formato que el EXIF de las fotos: fecha local y zona horaria."""
+    value = value.strip()
+    try:
+        # strptime entiende "+0100" y "Z" también en Python 3.10, donde fromisoformat no
+        moment = datetime.strptime(value, '%Y-%m-%dT%H:%M:%S%z')
+    except ValueError:
+        try:
+            moment = datetime.fromisoformat(value)
+        except ValueError:
+            return {}
+    result = {'DateTimeOriginal': moment.strftime('%Y:%m:%d %H:%M:%S')}
+    if moment.utcoffset() is not None:
+        offset = moment.strftime('%z')  # "+0100"
+        result['OffsetTimeOriginal'] = f'{offset[:3]}:{offset[3:]}'
+    return result
+
+
 def get_video_dict(fname: str):
     moov = read_moov(fname)
     if moov is None:
@@ -264,6 +282,9 @@ def get_video_dict(fname: str):
 
     info = {}
     walk_boxes(moov, 0, len(moov), info, [])
+
+    if isinstance(info.get('DateTimeOriginal'), str):
+        info.update(parse_iso8601(info['DateTimeOriginal']))
 
     if info.get('GPSCoordinates'):
         info.update(parse_iso6709(info['GPSCoordinates']))

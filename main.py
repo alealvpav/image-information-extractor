@@ -37,11 +37,13 @@ def enable_line_editing():
     readline.set_completer(complete_path)
     readline.parse_and_bind("tab: complete")
 
-def normalize_path(path):
+def normalize_path(path, base_dir=None):
     # Quita las comillas que añaden "Copiar como ruta" en Windows o arrastrar la carpeta a la terminal en Linux,
-    # y expande "~", "$HOME" y "%USERPROFILE%"
-    path = path.strip().strip('"').strip("'")
-    return os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
+    # y expande "~", "$HOME" y "%USERPROFILE%". Las rutas relativas se resuelven desde base_dir, si se indica
+    path = os.path.expandvars(os.path.expanduser(path.strip().strip('"').strip("'")))
+    if base_dir and not os.path.isabs(path):
+        path = os.path.join(base_dir, path)
+    return os.path.abspath(path)
 
 def ask_yes_no(question, default=None):
     yes_answers = ["s", "si", "sí", "y", "yes"]
@@ -66,8 +68,8 @@ def check_media_dir(path):
         raise ValueError(_("error_folder_missing", path=media_dir))
     return media_dir
 
-def resolve_new_csv_path(path):
-    csv_path = normalize_path(path)
+def resolve_new_csv_path(path, media_dir):
+    csv_path = normalize_path(path, media_dir)
     if os.path.isdir(csv_path):
         csv_path = os.path.join(csv_path, DEFAULT_OUTPUT_FILE)
     if not csv_path.lower().endswith(".csv"):
@@ -76,8 +78,8 @@ def resolve_new_csv_path(path):
         raise ValueError(_("error_csv_folder_missing", path=os.path.dirname(csv_path)))
     return csv_path
 
-def load_existing_csv(path):
-    csv_path = normalize_path(path)
+def load_existing_csv(path, media_dir):
+    csv_path = normalize_path(path, media_dir)
     if not os.path.isfile(csv_path):
         raise ValueError(_("error_file_missing", path=csv_path))
     try:
@@ -86,7 +88,7 @@ def load_existing_csv(path):
         raise ValueError(_("error_csv_unreadable", path=csv_path, error=e))
     if not csv_store.is_generated_csv(fieldnames):
         raise ValueError(_("error_not_generated_csv", path=csv_path, column=csv_store.FILE_NAME_COLUMN))
-    return csv_path, fieldnames, rows
+    return csv_path, rows
 
 def ask_media_dir():
     while True:
@@ -104,22 +106,22 @@ def ask_csv_mode():
         if answer in ("a", "actualizar", "u", "update"):
             return "update"
 
-def ask_new_csv_path():
+def ask_new_csv_path(media_dir):
     while True:
-        answer = input(_("prompt_new_csv", default=DEFAULT_OUTPUT_FILE))
+        answer = input(_("prompt_new_csv", default=os.path.join(media_dir, DEFAULT_OUTPUT_FILE)))
         try:
-            csv_path = resolve_new_csv_path(answer or DEFAULT_OUTPUT_FILE)
+            csv_path = resolve_new_csv_path(answer or DEFAULT_OUTPUT_FILE, media_dir)
         except ValueError as e:
             print(f"{e} {_('try_again')}")
             continue
         if not os.path.exists(csv_path) or ask_yes_no(_("confirm_overwrite", path=csv_path), "n"):
             return csv_path
 
-def ask_existing_csv_path():
+def ask_existing_csv_path(media_dir):
     while True:
-        answer = input(_("prompt_existing_csv", default=DEFAULT_OUTPUT_FILE))
+        answer = input(_("prompt_existing_csv", default=os.path.join(media_dir, DEFAULT_OUTPUT_FILE)))
         try:
-            return load_existing_csv(answer or DEFAULT_OUTPUT_FILE)
+            return load_existing_csv(answer or DEFAULT_OUTPUT_FILE, media_dir)
         except ValueError as e:
             print(f"{e} {_('try_again')}")
 
@@ -190,8 +192,8 @@ def parse_args(argv):
         parser.error(_("overwrite_requires_new", overwrite=option("overwrite"), new=option("new")))
     return args
 
-def new_csv_path_from_arg(path, overwrite):
-    csv_path = resolve_new_csv_path(path)
+def new_csv_path_from_arg(path, overwrite, media_dir):
+    csv_path = resolve_new_csv_path(path, media_dir)
     if os.path.exists(csv_path) and not overwrite:
         raise ValueError(_("error_csv_exists", path=csv_path, overwrite=option("overwrite"), update=option("update")))
     return csv_path
@@ -207,23 +209,24 @@ def main(argv=None):
         print(_("no_files", path=media_dir))
         return
 
+    # El CSV se guarda en la carpeta de las fotos y vídeos, salvo que se indique una ruta absoluta
     if args.new:
-        mode, csv_path = "new", new_csv_path_from_arg(args.new, args.overwrite)
+        mode, csv_path = "new", new_csv_path_from_arg(args.new, args.overwrite, media_dir)
     elif args.update:
         mode = "update"
-        csv_path, existing_fieldnames, existing_rows = load_existing_csv(args.update)
+        csv_path, existing_rows = load_existing_csv(args.update, media_dir)
     else:
         mode = ask_csv_mode()
         if mode == "new":
-            csv_path = ask_new_csv_path()
+            csv_path = ask_new_csv_path(media_dir)
         else:
-            csv_path, existing_fieldnames, existing_rows = ask_existing_csv_path()
+            csv_path, existing_rows = ask_existing_csv_path(media_dir)
     if mode == "new":
-        existing_fieldnames, existing_rows = [], []
+        existing_rows = []
 
     new_rows = extract_rows(media_dir, media_files)
     rows, updated = csv_store.merge_rows(existing_rows, new_rows)
-    csv_store.write_csv(csv_path, rows, existing_fieldnames)
+    csv_store.write_csv(csv_path, rows)
 
     if mode == "update":
         print(_("csv_updated", new=len(new_rows) - updated, updated=updated, total=len(rows), path=csv_path))

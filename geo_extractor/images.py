@@ -46,8 +46,24 @@ def get_exif_dict(fname: str):
     exif_dict = {k: v for k, v in exif_dict.items() if not (isinstance(v, bytes) and len(v) > MAX_BINARY_LENGTH)}
 
     exif_dict.update(get_decimal_coordinates(exif_dict))
+    if 'Latitude' in exif_dict:
+        exif_dict['GPSSource'] = 'EXIF'
+    gps_datetime = get_gps_datetime(exif_dict)
+    if gps_datetime:
+        exif_dict['GPSDateTime'] = gps_datetime
 
     return exif_dict
+
+def get_gps_datetime(exif_dict: dict):
+    # El EXIF guarda la fecha (GPSDateStamp, "2024:10:30") y la hora (GPSTimeStamp, (h, m, s)) del GPS por separado, en UTC
+    date, time = exif_dict.get('GPSDateStamp'), exif_dict.get('GPSTimeStamp')
+    if not date or not time:
+        return None
+    try:
+        hours, minutes, seconds = (int(float(x)) for x in time)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+    return f'{str(date).strip()} {hours:02d}:{minutes:02d}:{seconds:02d}'
 
 def dms_to_decimal(dms, ref):
     degrees, minutes, seconds = (float(x) for x in dms)

@@ -133,7 +133,7 @@ def test_interactive_run_in_english(monkeypatch, tmp_path, capsys):
     assert prompts == [
         'Path of the folder with the photos and videos [media]: ',
         'Create a new CSV (n) or update an existing one (u)? (N/u): ',
-        'Path of the new CSV [media_geo_information.csv]: ',
+        f"Path of the new CSV [{media / 'media_geo_information.csv'}]: ",
         f"'{csv_path}' already exists. Overwrite it? (y/N): ",
     ]
     out = capsys.readouterr().out

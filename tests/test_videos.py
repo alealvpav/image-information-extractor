@@ -1,7 +1,7 @@
 import pytest
 
 from geo_extractor import get_media_info
-from geo_extractor.videos import parse_iso6709
+from geo_extractor.videos import parse_iso6709, parse_iso8601
 from tests import builders as b
 
 
@@ -21,7 +21,8 @@ def test_iphone_video(tmp_path):
     assert info['Make'] == 'Apple'
     assert info['Model'] == 'iPhone 15 Pro'
     assert info['GPSHorizontalAccuracy'] == pytest.approx(4.7)
-    assert info['DateTimeOriginal'] == '2024-10-30T12:00:00+0100'
+    assert info['DateTimeOriginal'] == '2024:10:30 12:00:00'
+    assert info['OffsetTimeOriginal'] == '+01:00'
     assert info['GPSSource'] == 'QuickTime'
 
 
@@ -51,6 +52,17 @@ def test_parse_iso6709(value, expected):
     result = parse_iso6709(value)
     assert (result['Latitude'], result['Longitude']) == pytest.approx(expected[:2], abs=1e-6)
     assert result.get('Altitude') == (pytest.approx(expected[2]) if expected[2] is not None else None)
+
+
+@pytest.mark.parametrize('value, expected', [
+    ('2024-10-30T12:00:00+0100', {'DateTimeOriginal': '2024:10:30 12:00:00', 'OffsetTimeOriginal': '+01:00'}),
+    ('2024-10-30T12:00:00-05:00', {'DateTimeOriginal': '2024:10:30 12:00:00', 'OffsetTimeOriginal': '-05:00'}),
+    ('2024-10-30T12:00:00Z', {'DateTimeOriginal': '2024:10:30 12:00:00', 'OffsetTimeOriginal': '+00:00'}),
+    ('2024-10-30T12:00:00', {'DateTimeOriginal': '2024:10:30 12:00:00'}),
+    ('no es una fecha', {}),
+])
+def test_parse_iso8601(value, expected):
+    assert parse_iso8601(value) == expected
 
 
 # ---------------------------------------------------------------------------

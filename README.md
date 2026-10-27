@@ -18,8 +18,16 @@ Windows (`C:\Users\yo\Fotos`, `%USERPROFILE%\Pictures`) y de Linux (`/home/yo/Fo
 comillas, así que se puede pegar la ruta copiada o arrastrar la carpeta a la terminal. Pulsando Enter sin escribir
 nada se usa la carpeta "media" del directorio actual.
 
-Después pregunta si se quiere crear un CSV nuevo o actualizar uno existente (por defecto, `media_geo_information.csv`
-en el directorio desde el que se ejecuta el programa):
+Después pregunta si se quiere crear un CSV nuevo o actualizar uno existente. El CSV se busca y se guarda en la propia
+carpeta de las fotos y vídeos:
+
+- Pulsando Enter se usa `media_geo_information.csv` dentro de esa carpeta.
+- Un nombre de archivo (`viaje.csv`) o una ruta relativa (`resultados/viaje.csv`) también se toman desde esa carpeta,
+  tanto en las preguntas como en los argumentos `--nuevo` y `--actualizar`.
+- Para guardarlo en otro sitio hay que escribir una ruta absoluta (`C:\Informes\viaje.csv`, `/home/yo/viaje.csv`,
+  `~/viaje.csv`).
+
+Los `.csv` de la carpeta no se analizan como si fueran fotos.
 
 - **Nuevo**: se pide la ruta del CSV; si ya existe, se pregunta antes de sobrescribirlo.
 - **Actualizar**: los archivos que ya estaban en el CSV se actualizan, los nuevos se añaden al final y el resto de
@@ -77,9 +85,26 @@ Las traducciones están en `geo_extractor/i18n.py`: para añadir o cambiar un te
 
 ## Resultado
 
-Las columnas `Latitude`, `Longitude` y `Altitude` están en grados decimales tanto para imágenes como para vídeos.
-En los vídeos, `GPSCoordinates` es la coordenada original (ISO 6709) y `CreationTime` la fecha de creación del
-archivo (UTC).
+El CSV solo guarda la fecha y la ubicación de cada archivo. Las fechas tienen el mismo formato en fotos y vídeos
+(`2024:10:30 12:00:00`) y las coordenadas están en grados decimales.
+
+| Columna | Contenido |
+|---|---|
+| `0-MediaFileName` | Nombre del archivo |
+| `0-MediaPath` | Ruta completa (identifica el archivo al actualizar el CSV) |
+| `0-FileType` | `image` o `video` |
+| `DateTimeOriginal` | Fecha y hora de la foto o del vídeo, en la hora local de la cámara |
+| `OffsetTimeOriginal` | Zona horaria de `DateTimeOriginal` (`+01:00`), si la cámara la guarda |
+| `GPSDateTime` | Fecha y hora del GPS (UTC) |
+| `CreationTime` | Fecha de creación del archivo de vídeo (UTC) |
+| `Latitude`, `Longitude` | Coordenadas en grados decimales (sur y oeste en negativo) |
+| `Altitude` | Altitud en metros |
+| `GPSSource` | De dónde se ha sacado la ubicación: `EXIF` (fotos), `QuickTime` (móviles), `GoPro GPMF`, `DJI djmd`, `Subtítulos` o el nombre del `.SRT` |
+
+Cada cámara guarda unas fechas u otras, así que es normal que algunas columnas queden vacías. Al actualizar un CSV de
+una versión anterior, sus columnas de más (marca, modelo, datos EXIF...) se eliminan.
+
+Desde otro programa, `get_media_info()` sigue devolviendo todos los metadatos del archivo, no solo estos.
 
 ## Cámaras de acción y drones
 

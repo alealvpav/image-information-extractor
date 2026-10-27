@@ -2,7 +2,7 @@ import pytest
 
 from geo_extractor import get_media_info
 from geo_extractor.images import dms_to_decimal
-from tests.builders import MADRID, RAW_FILES, save_image
+from tests.builders import GPS_IFD, MADRID, RAW_FILES, save_image
 
 
 def assert_madrid(info):
@@ -46,6 +46,15 @@ def test_cr3_reads_exif_block(tmp_path):
     info = get_media_info(str(path))
     assert info['Model'] == 'Canon EOS R5'
     assert info['DateTimeOriginal'] == '2024:10:30 12:00:00'
+
+
+def test_gps_date_and_source(tmp_path):
+    path = tmp_path / 'foto.jpg'
+    gps = {**GPS_IFD, 7: (14.0, 5.0, 9.6), 29: '2024:10:30'}  # GPSTimeStamp y GPSDateStamp
+    save_image(path, gps=gps)
+    info = get_media_info(str(path))
+    assert info['GPSDateTime'] == '2024:10:30 14:05:09'
+    assert info['GPSSource'] == 'EXIF'
 
 
 def test_image_without_gps(tmp_path):

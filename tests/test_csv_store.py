@@ -36,15 +36,25 @@ def test_write_and_read_roundtrip(tmp_path):
     csv_store.write_csv(path, rows)
     assert path.read_bytes().startswith(b'\xef\xbb\xbf')  # BOM para Excel
     fieldnames, read_rows = csv_store.read_csv(path)
-    assert fieldnames == sorted({FILE_NAME_COLUMN, FILE_PATH_COLUMN, 'Latitude', 'GPSSource'})
+    assert fieldnames == csv_store.CSV_COLUMNS
     assert read_rows[0][FILE_NAME_COLUMN] == 'montaña.jpg'
     assert read_rows[1]['Latitude'] == ''
 
 
-def test_write_keeps_columns_of_existing_csv(tmp_path):
+def test_build_row_keeps_only_date_and_location():
+    info = {'Make': 'Apple', 'Model': 'iPhone', 'ISOSpeedRatings': 100, 'DateTimeOriginal': '2024:10:30 12:00:00',
+            'Latitude': 40.4, 'Longitude': -3.7, 'GPSSource': 'EXIF'}
+    built = csv_store.build_row('a.jpg', '/f/a.jpg', 'image', info)
+    assert set(built) == {FILE_NAME_COLUMN, FILE_PATH_COLUMN, csv_store.FILE_TYPE_COLUMN,
+                          'DateTimeOriginal', 'Latitude', 'Longitude', 'GPSSource'}
+
+
+def test_write_drops_extra_columns_of_old_csvs(tmp_path):
     path = tmp_path / 'salida.csv'
-    csv_store.write_csv(path, [row('a.jpg', '/f/a.jpg')], fieldnames=['ColumnaAntigua'])
-    assert 'ColumnaAntigua' in csv_store.read_csv(path)[0]
+    csv_store.write_csv(path, [row('a.jpg', '/f/a.jpg', Make='Canon', MakerNote='xxx', Latitude='1')])
+    fieldnames, rows = csv_store.read_csv(path)
+    assert fieldnames == csv_store.CSV_COLUMNS
+    assert rows[0]['Latitude'] == '1'
 
 
 def test_read_old_cp1252_csv_with_huge_cells(tmp_path):

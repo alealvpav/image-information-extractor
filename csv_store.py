@@ -8,11 +8,22 @@ FILE_NAME_COLUMN = "0-MediaFileName"
 FILE_PATH_COLUMN = "0-MediaPath"
 FILE_TYPE_COLUMN = "0-FileType"
 
+# Columnas del CSV, en este orden: el archivo, la fecha y la ubicación. El resto de metadatos no se guarda
+CSV_COLUMNS = [
+    FILE_NAME_COLUMN, FILE_PATH_COLUMN, FILE_TYPE_COLUMN,
+    "DateTimeOriginal",    # fecha y hora de la foto o del vídeo, en hora local de la cámara
+    "OffsetTimeOriginal",  # zona horaria de DateTimeOriginal (+01:00), si la cámara la guarda
+    "GPSDateTime",         # fecha y hora del GPS (UTC)
+    "CreationTime",        # fecha de creación del archivo de vídeo (UTC)
+    "Latitude", "Longitude", "Altitude",
+    "GPSSource",           # de dónde se ha sacado la ubicación
+]
+
 # Los CSV de versiones anteriores podían tener celdas enormes (MakerNote); 2**31 - 1 es el máximo que admite Windows
 csv.field_size_limit(2 ** 31 - 1)
 
 def build_row(media_file, media_path, file_type, media_info):
-    row = dict(media_info)
+    row = {k: v for k, v in media_info.items() if k in CSV_COLUMNS}
     row[FILE_NAME_COLUMN] = media_file
     row[FILE_PATH_COLUMN] = media_path
     row[FILE_TYPE_COLUMN] = file_type
@@ -50,12 +61,11 @@ def merge_rows(existing_rows, new_rows):
             updated += 1
     return rows, updated
 
-def write_csv(csv_path, rows, fieldnames=()):
+def write_csv(csv_path, rows):
     # utf-8-sig para que Excel en Windows muestre bien tildes y eñes
     with open(csv_path, "w", newline="", encoding="utf-8-sig") as csvfile:
-        # Imágenes y vídeos tienen campos distintos: se usan todos los que aparezcan
-        fieldnames = sorted(set(fieldnames) | {k for row in rows for k in row})
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        # Las columnas de más de los CSV de versiones anteriores (Make, MakerNote...) se descartan al actualizarlos
+        writer = csv.DictWriter(csvfile, fieldnames=CSV_COLUMNS, extrasaction="ignore")
 
         writer.writeheader()
         for row in rows:
